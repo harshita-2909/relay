@@ -1,0 +1,20 @@
+{
+  "name": "chirp-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chirp: a pretend social app that reports what happens to Relay. It never creates notifications.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "db:reset": "node src/db/reset.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
+  }
+}

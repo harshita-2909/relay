@@ -6,7 +6,8 @@
     "node": ">=22.13"
   },
   "workspaces": [
-    "relay-service"
+    "relay-service",
+    "chirp-service"
   ],
   "scripts": {
     "start": "npm run start -w relay-service",
