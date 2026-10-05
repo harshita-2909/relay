@@ -3,11 +3,13 @@
 
 const person = (u) => ({ id: u.id, name: u.name });
 
-export const postCreated = (actor, post, mentions) => ({
+// Chirp knows who follows whom, so it says who the author's followers are at the moment
+// of posting. Relay decides whether and how to tell them.
+export const postCreated = (actor, post, mentions, followers) => ({
   type: 'post.created',
   actor: person(actor),
   occurredAt: post.createdAt,
-  data: { post: { id: post.id, text: post.text }, mentions: mentions.map(person) },
+  data: { post: { id: post.id, text: post.text }, mentions: mentions.map(person), followers: followers.map(person) },
 });
 
 export const commentCreated = (actor, post, postAuthor, comment, mentions) => ({
@@ -32,5 +34,12 @@ export const userFollowed = (actor, followee, followedAt) => ({
   type: 'user.followed',
   actor: person(actor),
   occurredAt: followedAt,
+  data: { followee: person(followee) },
+});
+
+export const userUnfollowed = (actor, followee, unfollowedAt) => ({
+  type: 'user.unfollowed',
+  actor: person(actor),
+  occurredAt: unfollowedAt,
   data: { followee: person(followee) },
 });

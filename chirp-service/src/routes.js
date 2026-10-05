@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { commentCreated, postCreated, postLiked, userFollowed } from './activity.js';
+import { commentCreated, postCreated, postLiked, userFollowed, userUnfollowed } from './activity.js';
 import { nowIso } from './db/db.js';
 
 const MAX_TEXT = 500;
@@ -83,7 +83,10 @@ export function chirpRouter(db, relay) {
       .run(actor.id, text, createdAt).lastInsertRowid);
     const post = getPost(id);
 
-    const relayResult = await relay.report(postCreated(actor, post, findMentions(text)));
+    const followers = db.prepare(`
+      SELECT u.* FROM follows f JOIN users u ON u.id = f.follower_id WHERE f.followee_id = ? ORDER BY u.name
+    `).all(actor.id);
+    const relayResult = await relay.report(postCreated(actor, post, findMentions(text), followers));
     res.status(201).json({ post, relay: relayResult });
   });
 
@@ -132,6 +135,20 @@ export function chirpRouter(db, relay) {
 
     const relayResult = await relay.report(userFollowed(actor, followee, followedAt));
     return res.status(201).json({ following: true, alreadyFollowing: false, relay: relayResult });
+  });
+
+  // Unfollow: DELETE /users/:userId/followers/:actorId — the actor stops following :userId.
+  router.delete('/users/:userId/followers/:actorId', async (req, res) => {
+    const actor = getUser(req.params.actorId);
+    if (!actor) return sendError(res, 400, 'unknown_actor', 'The person unfollowing does not exist.');
+    const followee = getUser(req.params.userId);
+    if (!followee) return sendError(res, 404, 'user_not_found', 'That person does not exist.');
+
+    const { changes } = db.prepare('DELETE FROM follows WHERE follower_id = ? AND followee_id = ?').run(actor.id, followee.id);
+    if (changes === 0) return res.json({ following: false, wasFollowing: false, relay: null });
+
+    const relayResult = await relay.report(userUnfollowed(actor, followee, nowIso()));
+    return res.json({ following: false, wasFollowing: true, relay: relayResult });
   });
 
   return router;

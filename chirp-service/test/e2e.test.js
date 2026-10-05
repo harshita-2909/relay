@@ -48,3 +48,21 @@ test('Chirp → Relay → Asha\'s inbox, exactly as in the brief', async (t) => 
   assert.equal(inbox.unreadCount, 0);
   assert.equal(inbox.items[0].read, true);
 });
+
+test('followers hear about new posts, end to end', async (t) => {
+  const relayServer = createRelay(openRelayDb(':memory:')).listen(0);
+  await new Promise((r) => relayServer.once('listening', r));
+  t.after(() => relayServer.close());
+  const relayUrl = `http://127.0.0.1:${relayServer.address().port}`;
+  const chirp = request(createChirp(openChirpDb(':memory:'), createRelayClient({ baseUrl: relayUrl })));
+  const relay = request(relayUrl);
+
+  await chirp.post('/api/users/asha/followers').send({ actorId: 'rahul' }).expect(201);
+  await chirp.post('/api/users/asha/followers').send({ actorId: 'dev' }).expect(201);
+  const post = await chirp.post('/api/posts').send({ actorId: 'asha', text: 'Golden hour again' }).expect(201);
+  assert.equal(post.body.relay.summary, 'Notified 2, skipped 0.');
+  assert.equal((await relay.get('/api/users/rahul/inbox')).body.items[0].body, "Asha shared a new post: 'Golden hour again'");
+
+  // Asha got one grouped notification for her two new followers.
+  assert.equal((await relay.get('/api/users/asha/inbox')).body.items[0].body, 'Dev and Rahul started following you');
+});

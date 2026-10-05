@@ -85,3 +85,29 @@ test('bad requests are refused clearly and report nothing', async () => {
   await api.post('/api/posts/999/likes').send({ actorId: 'asha' }).expect(404);
   assert.equal(reported.length, 0);
 });
+
+test("a post lists the author's current followers for Relay", async () => {
+  const { api, reported } = makeChirp();
+  await api.post('/api/users/asha/followers').send({ actorId: 'rahul' }).expect(201);
+  await api.post('/api/users/asha/followers').send({ actorId: 'meera' }).expect(201);
+  await api.delete('/api/users/asha/followers/meera').expect(200);
+  await api.post('/api/posts').send({ actorId: 'asha', text: 'New photos up!' }).expect(201);
+
+  const post = reported.find((e) => e.type === 'post.created');
+  assert.deepEqual(post.data.followers, [{ id: 'rahul', name: 'Rahul' }]);
+});
+
+test('unfollowing reports user.unfollowed once; unfollowing when not following reports nothing', async () => {
+  const { api, reported } = makeChirp();
+  await api.post('/api/users/asha/followers').send({ actorId: 'dev' }).expect(201);
+  const res = await api.delete('/api/users/asha/followers/dev').expect(200);
+  assert.equal(res.body.wasFollowing, true);
+  const again = await api.delete('/api/users/asha/followers/dev').expect(200);
+  assert.equal(again.body.wasFollowing, false);
+
+  assert.deepEqual(reported.map((e) => e.type), ['user.followed', 'user.unfollowed']);
+  assert.deepEqual(reported[1].data.followee, { id: 'asha', name: 'Asha' });
+  const dev = (await api.get('/api/users')).body.users.find((u) => u.id === 'dev');
+  assert.deepEqual(dev.following, []);
+  await api.delete('/api/users/asha/followers/ghost').expect(400);
+});
