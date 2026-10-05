@@ -1,0 +1,15 @@
+{
+  "name": "relay-monorepo",
+  "private": true,
+  "description": "Relay notification service + Chirp pretend app (take-home, Part A)",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "workspaces": [
+    "relay-service"
+  ],
+  "scripts": {
+    "start": "npm run start -w relay-service",
+    "test": "npm test --workspaces --if-present"
+  }
+}
