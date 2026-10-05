@@ -2,15 +2,22 @@
   "name": "relay-monorepo",
   "private": true,
   "description": "Relay notification service + Chirp pretend app (take-home, Part A)",
+  "type": "module",
   "engines": {
     "node": ">=22.13"
   },
   "workspaces": [
     "relay-service",
-    "chirp-service"
+    "chirp-service",
+    "web"
   ],
   "scripts": {
-    "start": "npm run start -w relay-service",
-    "test": "npm test --workspaces --if-present"
+    "start": "node scripts/start.js",
+    "start:relay": "npm run start -w relay-service",
+    "start:chirp": "npm run start -w chirp-service",
+    "start:web": "npm run dev -w web",
+    "test": "npm test --workspaces --if-present",
+    "build": "npm run build -w web",
+    "reset": "npm run db:reset -w relay-service && npm run db:reset -w chirp-service"
   }
 }
