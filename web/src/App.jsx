@@ -142,9 +142,9 @@ export default function App() {
       <main className="content">
         {!me ? <p className="muted">Loading…</p> : (
           <>
-            {tab === 'feed' && <Feed me={me} users={users} onOutcome={reportOutcome} onError={(m) => toast({ tone: 'error', title: m })} />}
+            {tab === 'feed' && <Feed me={me} users={users} onOutcome={reportOutcome} onUsersChanged={loadUsers} onError={(m) => toast({ tone: 'error', title: m })} />}
             {tab === 'inbox' && <Inbox key={me.id} me={me} users={users} onUnreadChange={setUnread} onOpenRecord={openRecord} />}
-            {tab === 'preferences' && <Preferences key={me.id} me={me} />}
+            {tab === 'preferences' && <Preferences key={me.id} me={me} users={users} />}
             {tab === 'templates' && <Templates />}
             {tab === 'records' && <Records users={users} focusEventId={focusEventId} />}
           </>

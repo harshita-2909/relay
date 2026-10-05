@@ -31,7 +31,14 @@ export function MentionText({ text }) {
 }
 
 // Mirrors Relay's labels; used only for icons and short tags in the UI.
-export const TYPE_ICONS = { new_comment: '💬', new_like: '♥', mention: '@', new_follower: '＋' };
+export const TYPE_ICONS = { new_comment: '💬', new_like: '♥', mention: '@', new_follower: '＋', new_post: '📝' };
+
+/** The Relay subject for a Chirp post — what mutes and grouping are keyed on. */
+export const postSubject = (postId) => `post:${postId}`;
+
+export function formatTime(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
 
 export function storageGet(key) {
   try { return window.localStorage.getItem(key); } catch { return null; }

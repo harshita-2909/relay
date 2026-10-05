@@ -2,6 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { relay } from '../api.js';
 import { timeAgo } from '../util.jsx';
 
+const OUTCOME = {
+  delivered: { icon: '✓', label: 'Notified', pill: 'pill-ok' },
+  held: { icon: '⏸', label: 'Held (snoozed)', pill: 'pill-held' },
+  skipped: { icon: '⊘', label: 'Skipped', pill: 'pill-skip' },
+};
+
 // "What happened, and why?" — every activity Relay received, who it notified, who it skipped.
 export default function Records({ users, focusEventId }) {
   const [recipientId, setRecipientId] = useState('');
@@ -80,11 +86,11 @@ function RecordCard({ event, focused }) {
         <ul className="outcomes">
           {event.results.map((r) => (
             <li key={r.recipient.id} className={`outcome ${r.outcome}`}>
-              <span className="outcome-icon" aria-hidden="true">{r.outcome === 'delivered' ? '✓' : '⊘'}</span>
+              <span className="outcome-icon" aria-hidden="true">{OUTCOME[r.outcome].icon}</span>
               <div>
                 <strong>{r.recipient.name}</strong>{' '}
-                <span className={`pill small ${r.outcome === 'delivered' ? 'pill-ok' : 'pill-skip'}`}>
-                  {r.outcome === 'delivered' ? 'Notified' : 'Skipped'} · {r.typeLabel}
+                <span className={`pill small ${OUTCOME[r.outcome].pill}`}>
+                  {OUTCOME[r.outcome].label}{r.reasonCode === 'grouped' ? ' (combined)' : ''} · {r.typeLabel}
                 </span>
                 <p className="reason">{r.reason}</p>
               </div>

@@ -46,6 +46,7 @@ export const chirp = {
   comment: (postId, actorId, text) => chirpCall(`/posts/${postId}/comments`, { method: 'POST', body: { actorId, text } }),
   like: (postId, actorId) => chirpCall(`/posts/${postId}/likes`, { method: 'POST', body: { actorId } }),
   follow: (userId, actorId) => chirpCall(`/users/${u(userId)}/followers`, { method: 'POST', body: { actorId } }),
+  unfollow: (userId, actorId) => chirpCall(`/users/${u(userId)}/followers/${u(actorId)}`, { method: 'DELETE' }),
 };
 
 export const relay = {
@@ -54,8 +55,13 @@ export const relay = {
   markAllRead: (userId) => relayCall(`/users/${u(userId)}/inbox/read-all`, { method: 'POST' }),
   preferences: (userId) => relayCall(`/users/${u(userId)}/preferences`),
   setPreferences: (userId, changes) => relayCall(`/users/${u(userId)}/preferences`, { method: 'PUT', body: changes }),
+  mutes: (userId) => relayCall(`/users/${u(userId)}/mutes`),
+  mute: (userId, subject) => relayCall(`/users/${u(userId)}/mutes/${u(subject)}`, { method: 'PUT' }),
+  unmute: (userId, subject) => relayCall(`/users/${u(userId)}/mutes/${u(subject)}`, { method: 'DELETE' }),
+  snooze: (userId, minutes) => relayCall(`/users/${u(userId)}/snooze`, { method: 'PUT', body: { minutes } }),
+  endSnooze: (userId) => relayCall(`/users/${u(userId)}/snooze`, { method: 'DELETE' }),
   templates: () => relayCall('/templates'),
-  saveTemplate: (type, template) => relayCall(`/templates/${u(type)}`, { method: 'PUT', body: { template } }),
+  saveTemplate: (type, changes) => relayCall(`/templates/${u(type)}`, { method: 'PUT', body: changes }),
   events: ({ recipientId, status } = {}) => {
     const q = new URLSearchParams({ limit: '100' });
     if (recipientId) q.set('recipientId', recipientId);

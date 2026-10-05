@@ -9,7 +9,8 @@ const SAMPLE = {
   actor: 'Rahul', recipient: 'Asha', comment: 'Great photo!', post: 'Sunset at the beach',
   context: 'comment', text: 'Hey @Asha, look at this',
 };
-const preview = (template) => template.replace(/\{(\w+)\}/g, (m, name) => SAMPLE[name] ?? m);
+const preview = (template, vars = SAMPLE) => template.replace(/\{(\w+)\}/g, (m, name) => vars[name] ?? m);
+const GROUPED_SAMPLE = { ...SAMPLE, actor: 'Rahul and 4 others' };
 
 export default function Templates() {
   const [templates, setTemplates] = useState(null);
@@ -41,17 +42,21 @@ export default function Templates() {
 function TemplateEditor({ initial }) {
   const [saved, setSaved] = useState(initial);
   const [draft, setDraft] = useState(initial.template);
+  const [windowDraft, setWindowDraft] = useState(String(initial.groupWindowMinutes ?? 0));
   const [status, setStatus] = useState(null); // { tone, text }
   const [busy, setBusy] = useState(false);
-  const dirty = draft !== saved.template;
+  const windowValue = Number(windowDraft);
+  const dirty = draft !== saved.template || windowValue !== (saved.groupWindowMinutes ?? 0);
+  const reset = () => { setDraft(saved.template); setWindowDraft(String(saved.groupWindowMinutes ?? 0)); setStatus(null); };
 
   const save = async () => {
     setBusy(true);
     try {
-      const updated = await relay.saveTemplate(saved.type, draft);
+      const updated = await relay.saveTemplate(saved.type, { template: draft, groupWindowMinutes: windowValue });
       setSaved(updated);
       setDraft(updated.template);
-      setStatus({ tone: 'ok', text: 'Saved. New notifications will use this wording.' });
+      setWindowDraft(String(updated.groupWindowMinutes ?? 0));
+      setStatus({ tone: 'ok', text: 'Saved. New notifications use this from now on.' });
     } catch (err) {
       setStatus({ tone: 'error', text: err.message });
     } finally {
@@ -88,12 +93,28 @@ function TemplateEditor({ initial }) {
         ))}
       </div>
       <p className="preview"><span className="muted small">Preview</span> {preview(draft) || <em className="muted">empty</em>}</p>
+      {windowValue > 0 && (
+        <p className="preview"><span className="muted small">Combined</span> {preview(draft, GROUPED_SAMPLE)}</p>
+      )}
+      <label className="row wrap small group-window">
+        <span>Combine similar notifications within</span>
+        <input
+          type="number"
+          min={0}
+          max={1440}
+          step={1}
+          value={windowDraft}
+          onChange={(e) => { setWindowDraft(e.target.value); setStatus(null); }}
+          aria-label={`${saved.label}: grouping window in minutes`}
+        />
+        <span>minutes <span className="muted">(0 = never)</span></span>
+      </label>
 
       <div className="row spread">
         <span className={`small ${status?.tone === 'error' ? 'error-text' : 'ok-text'}`}>{status?.text}</span>
         <div className="row">
-          <button className="btn" disabled={!dirty || busy} onClick={() => { setDraft(saved.template); setStatus(null); }}>Undo changes</button>
-          <button className="btn primary" disabled={!dirty || busy} onClick={save}>Save wording</button>
+          <button className="btn" disabled={!dirty || busy} onClick={reset}>Undo changes</button>
+          <button className="btn primary" disabled={!dirty || busy} onClick={save}>Save</button>
         </div>
       </div>
     </div>

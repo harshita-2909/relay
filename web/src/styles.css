@@ -288,3 +288,30 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
   .notification { flex-wrap: wrap; }
   .notif-actions { flex-basis: 100%; justify-content: flex-end; }
 }
+
+/* ---- B3/B4/B5 additions ------------------------------------------------------ */
+.people-list { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.people-list li { padding: 6px 8px; border-radius: 10px; background: var(--surface-2); }
+.btn.following .when-hover { display: none; }
+.btn.following:hover:not(:disabled) .when-idle { display: none; }
+.btn.following:hover:not(:disabled) .when-hover { display: inline; color: var(--bad); }
+.icon-btn {
+  background: none; border: 1px solid transparent; border-radius: 999px;
+  padding: 2px 10px; font-size: 0.82rem; color: var(--muted); white-space: nowrap;
+}
+.icon-btn:hover { border-color: var(--border); color: var(--text); }
+.icon-btn.active { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+.post.is-muted { border-style: dashed; }
+.avatar-stack { display: inline-flex; }
+.avatar-stack .avatar { border: 2px solid var(--surface); }
+.avatar-stack .avatar + .avatar { margin-left: -10px; }
+.notice.snooze {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  background: var(--accent-soft); color: var(--text);
+}
+.snooze-picker { display: inline-flex; align-items: center; gap: 4px; }
+.pill-held { background: var(--accent-soft); color: var(--accent); }
+.outcome.held .outcome-icon { color: var(--accent); }
+.group-window input { width: 5.5em; padding: 4px 8px; }
+.subhead { font-size: 1.05rem; margin: 28px 0 4px; }
+.subhead + p { margin-bottom: 12px; }

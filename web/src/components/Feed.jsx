@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { chirp } from '../api.js';
-import { Avatar, MentionText, timeAgo } from '../util.jsx';
+import { chirp, relay } from '../api.js';
+import { Avatar, MentionText, postSubject, timeAgo } from '../util.jsx';
 
-// The Chirp app itself. Everything here talks only to Chirp; Chirp reports to Relay.
-export default function Feed({ me, users, onOutcome, onError }) {
+// The Chirp app itself. Posting, commenting, liking and following talk only to Chirp, which
+// reports to Relay. Muting a post is a notification setting, so that one is stored in Relay.
+export default function Feed({ me, users, onOutcome, onError, onUsersChanged }) {
   const [posts, setPosts] = useState(null);
   const [error, setError] = useState(null);
+  const [mutes, setMutes] = useState(null); // Set of subjects, or null if Relay is unavailable
   const byId = Object.fromEntries(users.map((u) => [u.id, u]));
 
   const load = useCallback(async () => {
@@ -17,6 +19,12 @@ export default function Feed({ me, users, onOutcome, onError }) {
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    relay.mutes(me.id)
+      .then((data) => setMutes(new Set(data.mutes.map((m) => m.subject))))
+      .catch(() => setMutes(null));
+  }, [me.id]);
 
   /** Run a Chirp action, then refresh the feed and show what Relay did. */
   const act = async (verb, fn) => {
@@ -31,8 +39,24 @@ export default function Feed({ me, users, onOutcome, onError }) {
     }
   };
 
+  const toggleMute = async (postId) => {
+    const subject = postSubject(postId);
+    try {
+      const data = mutes.has(subject) ? await relay.unmute(me.id, subject) : await relay.mute(me.id, subject);
+      setMutes(new Set(data.mutes.map((m) => m.subject)));
+    } catch (err) {
+      onError(err.message);
+    }
+  };
+
+  const follow = (userId) => act(`Followed ${byId[userId]?.name}`, () => chirp.follow(userId, me.id))
+    .then((ok) => { onUsersChanged(); return ok; });
+  const unfollow = (userId) => act(`Unfollowed ${byId[userId]?.name}`, () => chirp.unfollow(userId, me.id))
+    .then((ok) => { onUsersChanged(); return ok; });
+
   return (
     <div className="feed">
+      <People me={me} users={users} onFollow={follow} onUnfollow={unfollow} />
       <Composer me={me} users={users} onPost={(text) => act('Posted', () => chirp.createPost(me.id, text))} />
       {error && <div className="notice error">{error}</div>}
       {posts === null && !error && <p className="muted">Loading posts…</p>}
@@ -43,12 +67,58 @@ export default function Feed({ me, users, onOutcome, onError }) {
           post={post}
           me={me}
           byId={byId}
+          muted={mutes ? mutes.has(postSubject(post.id)) : null}
           onLike={() => act('Liked', () => chirp.like(post.id, me.id))}
           onComment={(text) => act('Commented', () => chirp.comment(post.id, me.id, text))}
-          onFollow={(userId) => act(`Followed ${byId[userId]?.name}`, () => chirp.follow(userId, me.id))}
+          onFollow={follow}
+          onUnfollow={unfollow}
+          onToggleMute={() => toggleMute(post.id)}
         />
       ))}
     </div>
+  );
+}
+
+function FollowButton({ following, onFollow, onUnfollow, name }) {
+  const [busy, setBusy] = useState(false);
+  const run = async (fn) => { setBusy(true); await fn(); setBusy(false); };
+  return following
+    ? (
+      <button className="btn small following" disabled={busy} onClick={() => run(onUnfollow)} title={`Stop following ${name}`}>
+        <span className="when-idle">Following</span><span className="when-hover">Unfollow</span>
+      </button>
+    )
+    : <button className="btn small" disabled={busy} onClick={() => run(onFollow)}>Follow</button>;
+}
+
+function People({ me, users, onFollow, onUnfollow }) {
+  const others = users.filter((u) => u.id !== me.id);
+  return (
+    <section className="card people" aria-label="People">
+      <div className="row spread">
+        <strong className="small">People</strong>
+        <span className="muted small">
+          {me.name} follows {me.following.length} · {me.followerCount} follower{me.followerCount === 1 ? '' : 's'}
+        </span>
+      </div>
+      <ul className="people-list">
+        {others.map((u) => (
+          <li key={u.id} className="row">
+            <Avatar user={u} size={28} />
+            <div className="grow">
+              <strong>{u.name}</strong>
+              <div className="muted small">{u.followerCount} follower{u.followerCount === 1 ? '' : 's'}</div>
+            </div>
+            <FollowButton
+              name={u.name}
+              following={me.following.includes(u.id)}
+              onFollow={() => onFollow(u.id)}
+              onUnfollow={() => onUnfollow(u.id)}
+            />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -95,11 +165,10 @@ function Composer({ me, users, onPost }) {
   );
 }
 
-function PostCard({ post, me, byId, onLike, onComment, onFollow }) {
+function PostCard({ post, me, byId, muted, onLike, onComment, onFollow, onUnfollow, onToggleMute }) {
   const author = byId[post.authorId];
   const liked = post.likedBy.includes(me.id);
   const isMine = post.authorId === me.id;
-  const following = me.following?.includes(post.authorId);
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -112,17 +181,32 @@ function PostCard({ post, me, byId, onLike, onComment, onFollow }) {
   };
 
   return (
-    <article className="card post">
+    <article className={`card post ${muted ? 'is-muted' : ''}`}>
       <header className="row">
         <Avatar user={author} />
         <div className="grow">
           <strong>{author?.name ?? post.authorId}</strong>
           <span className="muted small"> · {timeAgo(post.createdAt)}</span>
         </div>
+        {muted !== null && (
+          <button
+            className={`icon-btn ${muted ? 'active' : ''}`}
+            onClick={onToggleMute}
+            aria-pressed={muted}
+            title={muted
+              ? `Muted for ${me.name}: no likes or comments about this post (mentions still come through). Click to unmute.`
+              : `Mute notifications about this post for ${me.name}`}
+          >
+            {muted ? '🔕 Muted' : '🔔 Mute'}
+          </button>
+        )}
         {!isMine && (
-          following
-            ? <span className="muted small">Following</span>
-            : <button className="btn small" onClick={() => onFollow(post.authorId)}>Follow</button>
+          <FollowButton
+            name={author?.name}
+            following={me.following.includes(post.authorId)}
+            onFollow={() => onFollow(post.authorId)}
+            onUnfollow={() => onUnfollow(post.authorId)}
+          />
         )}
       </header>
 
