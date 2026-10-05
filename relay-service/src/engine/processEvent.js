@@ -2,8 +2,8 @@
 // of every decision. Everything for one event happens in a single transaction.
 import { nowIso, transaction } from '../db/db.js';
 import { EVENT_TYPES } from '../rules/eventTypes.js';
-import { getTemplate, isEnabled, upsertUser } from '../store.js';
-import { render } from './render.js';
+import { activeSnooze, getTemplate, isEnabled, isMuted, upsertUser } from '../store.js';
+import { putInInbox } from './inbox.js';
 import { EventRejected, validateEvent } from './validate.js';
 
 /**
@@ -54,10 +54,6 @@ function deliver(db, event, now) {
     }
   }
 
-  const insertNotification = db.prepare(`
-    INSERT INTO notifications (recipient_id, event_id, type, actor_id, body, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
   const insertRecord = db.prepare(`
     INSERT INTO notification_records
       (event_id, recipient_id, type, outcome, reason_code, reason, notification_id, created_at)
@@ -67,37 +63,13 @@ function deliver(db, event, now) {
   const results = [];
   for (const { person, rules } of candidates.values()) {
     upsertUser(db, person, now);
-    const labels = rules.map((r) => getTemplate(db, r.type).label);
-    let outcome;
-
-    if (person.id === actor.id) {
-      // 2. Never notify people about their own actions.
-      outcome = {
+    const outcome = person.id === actor.id
+      ? {
+        // 2. Never notify people about their own actions.
         type: rules[0].type, outcome: 'skipped', reasonCode: 'self_action',
         reason: `${person.name} did this themselves, and people are never notified about their own actions.`,
-      };
-    } else {
-      // 3. Respect preferences: use the highest-priority type this person still accepts.
-      const chosen = rules.findIndex((r) => isEnabled(db, person.id, r.type));
-      if (chosen === -1) {
-        outcome = {
-          type: rules[0].type, outcome: 'skipped', reasonCode: 'preference_off',
-          reason: `${person.name} has turned off ${joinLabels(labels)} notifications.`,
-        };
-      } else {
-        // 4. Write the words and put it in their inbox.
-        const rule = rules[chosen];
-        const template = getTemplate(db, rule.type);
-        const body = render(template.template, { actor: actor.name, recipient: person.name, ...rule.vars(event) });
-        const notificationId = Number(
-          insertNotification.run(person.id, eventId, rule.type, actor.id, body, now).lastInsertRowid,
-        );
-        outcome = {
-          type: rule.type, outcome: 'delivered', reasonCode: 'delivered', notificationId, body,
-          reason: deliveredReason(person.name, labels, chosen),
-        };
       }
-    }
+      : decide(db, { person, rules, event, eventId, now });
 
     insertRecord.run(eventId, person.id, outcome.type, outcome.outcome, outcome.reasonCode, outcome.reason,
       outcome.notificationId ?? null, now);
@@ -113,15 +85,72 @@ function deliver(db, event, now) {
   };
 }
 
-function deliveredReason(name, labels, chosen) {
-  let reason = `Delivered to ${name}'s inbox as a ${labels[chosen]} notification.`;
-  if (chosen > 0) {
-    reason += ` (${name} has turned off ${joinLabels(labels.slice(0, chosen))} notifications.)`;
-  } else if (labels.length > 1) {
-    reason += ` ${name} also qualified for ${joinLabels(labels.slice(1))}, but gets only one notification per activity.`;
+function decide(db, { person, rules, event, eventId, now }) {
+  const name = person.name;
+  const label = (rule) => getTemplate(db, rule.type).label;
+
+  // 3. Respect choices: the highest-priority type this person accepts and hasn't muted.
+  const checks = rules.map((rule) => {
+    const subject = rule.subject?.(event) ?? null;
+    if (!isEnabled(db, person.id, rule.type)) return { rule, subject, blocked: 'preference_off' };
+    if (subject && !rule.bypassMute && isMuted(db, person.id, subject)) return { rule, subject, blocked: 'muted' };
+    return { rule, subject };
+  });
+  const chosen = checks.findIndex((c) => !c.blocked);
+
+  if (chosen === -1) {
+    const muted = checks.some((c) => c.blocked === 'muted');
+    return {
+      type: rules[0].type,
+      outcome: 'skipped',
+      reasonCode: muted ? 'muted' : 'preference_off',
+      reason: blockedReasons(name, checks, label),
+    };
   }
-  return reason;
+
+  // 4. Write the words and put it in their inbox — now, or when their snooze ends.
+  const { rule, subject } = checks[chosen];
+  const snoozedUntil = activeSnooze(db, person.id, now);
+  const placed = putInInbox(db, {
+    recipient: person, actor: event.actor, eventId, rule, event, subject, now,
+    visibleAt: snoozedUntil ?? now, held: !!snoozedUntil,
+  });
+
+  let reason;
+  if (snoozedUntil) {
+    reason = `Held: ${name} is snoozing until ${formatTime(snoozedUntil)}, so this "${label(rule)}" notification will appear in their inbox then.`;
+  } else if (placed.grouped) {
+    reason = `Combined into ${name}'s existing "${label(rule)}" notification (now ${placed.actorCount} ${placed.actorCount === 1 ? 'person' : 'people'}); it is unread again.`;
+  } else {
+    reason = `Delivered to ${name}'s inbox as a ${label(rule)} notification.`;
+  }
+  if (chosen > 0) {
+    reason += ` (${blockedReasons(name, checks.slice(0, chosen), label).replace(/\.$/, '')}.)`;
+  } else if (rules.length > 1) {
+    reason += ` ${name} also qualified for ${joinLabels(rules.slice(1).map(label))}, but gets only one notification per activity.`;
+  }
+
+  return {
+    type: rule.type,
+    outcome: snoozedUntil ? 'held' : 'delivered',
+    reasonCode: snoozedUntil ? 'snoozed' : placed.grouped ? 'grouped' : 'delivered',
+    notificationId: placed.notificationId,
+    body: placed.body,
+    reason,
+  };
 }
+
+function blockedReasons(name, checks, label) {
+  const off = checks.filter((c) => c.blocked === 'preference_off').map((c) => label(c.rule));
+  const muted = checks.filter((c) => c.blocked === 'muted');
+  const parts = [];
+  if (off.length) parts.push(`${name} has turned off ${joinLabels(off)} notifications`);
+  if (muted.length) parts.push(`${name} muted notifications about this ${muted[0].subject.split(':')[0]}`);
+  return `${parts.join(', and ')}.`;
+}
+
+// Local time is right here: Relay runs on the same machine as the people reading the records.
+const formatTime = (iso) => new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 
 const joinLabels = (labels) => {
   const quoted = labels.map((l) => `"${l}"`);
@@ -129,8 +158,8 @@ const joinLabels = (labels) => {
 };
 
 export function summarise(results) {
-  const delivered = results.filter((r) => r.outcome === 'delivered').length;
-  const skipped = results.length - delivered;
   if (results.length === 0) return 'Nobody needed to hear about this.';
-  return `Notified ${delivered}, skipped ${skipped}.`;
+  const count = (o) => results.filter((r) => r.outcome === o).length;
+  const held = count('held');
+  return `Notified ${count('delivered')}, ${held ? `held ${held}, ` : ''}skipped ${count('skipped')}.`;
 }

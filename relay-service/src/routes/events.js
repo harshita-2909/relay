@@ -87,10 +87,19 @@ function toRecord(db, row) {
 
   return {
     ...base,
-    description: EVENT_TYPES[row.type]?.describe(payload) ?? row.type,
+    description: describe(row.type, payload),
     summary: summarise(results),
     results,
   };
+}
+
+// Stored payloads were validated on the way in; still, one odd row must not break the records page.
+function describe(type, payload) {
+  try {
+    return EVENT_TYPES[type]?.describe(payload) ?? type;
+  } catch {
+    return type;
+  }
 }
 
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));

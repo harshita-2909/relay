@@ -9,7 +9,7 @@ test('new people start with every type switched on', async () => {
   const { api } = makeRelay();
   await api.put('/api/users/dev').send({ name: 'Dev' }).expect(200);
   const { body } = await api.get('/api/users/dev/preferences').expect(200);
-  assert.deepEqual(prefsOf(body), { mention: true, new_comment: true, new_follower: true, new_like: true });
+  assert.deepEqual(prefsOf(body), { mention: true, new_comment: true, new_follower: true, new_like: true, new_post: true });
   assert.ok(body.preferences.every((p) => p.isDefault));
 });
 

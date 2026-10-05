@@ -6,7 +6,7 @@ import { usersRouter } from './routes/users.js';
 
 export function createApp(db) {
   const app = express();
-  app.use(express.json({ limit: '100kb' }));
+  app.use(express.json({ limit: '2mb' })); // a post event lists the author's followers
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'relay' }));
   app.get('/api/event-types', eventTypesHandler);

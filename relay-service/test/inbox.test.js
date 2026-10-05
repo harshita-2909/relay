@@ -61,7 +61,7 @@ test('a person only ever sees their own inbox and cannot touch anyone else\'s', 
 test('someone with no notifications has an empty inbox', async () => {
   const { api } = makeRelay();
   const { body } = await api.get('/api/users/nobody/inbox').expect(200);
-  assert.deepEqual(body, { userId: 'nobody', unreadCount: 0, items: [] });
+  assert.deepEqual(body, { userId: 'nobody', unreadCount: 0, items: [], snooze: { active: false, until: null, heldCount: 0 } });
 });
 
 test('unknown endpoints return a JSON 404', async () => {

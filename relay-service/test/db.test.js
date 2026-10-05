@@ -11,7 +11,7 @@ test('schema creates all tables', () => {
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
     .all().map((r) => r.name).filter((n) => !n.startsWith('sqlite_'));
   assert.deepEqual(tables, [
-    'events', 'notification_records', 'notification_templates', 'notifications', 'preferences', 'users',
+    'events', 'mutes', 'notification_records', 'notification_templates', 'notifications', 'preferences', 'users',
   ]);
 });
 

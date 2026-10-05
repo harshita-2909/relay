@@ -15,6 +15,12 @@ export function getUser(db, id) {
   return db.prepare('SELECT id, name, created_at AS createdAt FROM users WHERE id = ?').get(id) ?? null;
 }
 
+/** Names for a list of user ids, in the same order. */
+export function namesOf(db, ids) {
+  const stmt = db.prepare('SELECT name FROM users WHERE id = ?');
+  return ids.map((id) => stmt.get(id)?.name ?? id);
+}
+
 export function listUsers(db) {
   return db.prepare('SELECT id, name, created_at AS createdAt FROM users ORDER BY name').all();
 }
@@ -28,6 +34,7 @@ const toTemplate = (r) => ({
   template: r.template,
   variables: JSON.parse(r.variables),
   defaultEnabled: r.default_enabled === 1,
+  groupWindowMinutes: r.group_window_minutes ?? null,
   updatedAt: r.updated_at,
 });
 
@@ -40,9 +47,13 @@ export function getTemplate(db, type) {
   return row ? toTemplate(row) : null;
 }
 
-export function updateTemplate(db, type, template, now = nowIso()) {
-  db.prepare('UPDATE notification_templates SET template = ?, updated_at = ? WHERE type = ?')
-    .run(template, now, type);
+/** changes: { template?, groupWindowMinutes? } (groupWindowMinutes null = never group). */
+export function updateTemplate(db, type, changes, now = nowIso()) {
+  const current = getTemplate(db, type);
+  const template = changes.template ?? current.template;
+  const window = 'groupWindowMinutes' in changes ? changes.groupWindowMinutes : current.groupWindowMinutes;
+  db.prepare('UPDATE notification_templates SET template = ?, group_window_minutes = ?, updated_at = ? WHERE type = ?')
+    .run(template, window, now, type);
   return getTemplate(db, type);
 }
 
@@ -80,20 +91,53 @@ export function setPreference(db, userId, type, enabled, now = nowIso()) {
   `).run(userId, type, enabled ? 1 : 0, now);
 }
 
-// ---- inbox -------------------------------------------------------------------------------
+// ---- mutes -------------------------------------------------------------------------------
 
-export function unreadCount(db, userId) {
-  return db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE recipient_id = ? AND read_at IS NULL')
-    .get(userId).n;
+export function isMuted(db, userId, subject) {
+  return !!db.prepare('SELECT 1 FROM mutes WHERE user_id = ? AND subject = ?').get(userId, subject);
+}
+
+export function listMutes(db, userId) {
+  return db.prepare('SELECT subject, created_at AS createdAt FROM mutes WHERE user_id = ? ORDER BY created_at DESC')
+    .all(userId);
+}
+
+// ---- snooze ------------------------------------------------------------------------------
+
+/** The time a person's snooze ends, or null if they aren't snoozing right now. */
+export function activeSnooze(db, userId, now = nowIso()) {
+  const row = db.prepare('SELECT snoozed_until FROM users WHERE id = ?').get(userId);
+  return row?.snoozed_until && row.snoozed_until > now ? row.snoozed_until : null;
+}
+
+// ---- inbox -------------------------------------------------------------------------------
+// A notification is in the inbox once visible_at has passed. Notifications that arrive during
+// a snooze are stored with visible_at = the end of the snooze, so they appear on their own.
+
+export function unreadCount(db, userId, now = nowIso()) {
+  return db.prepare(`
+    SELECT COUNT(*) AS n FROM notifications
+    WHERE recipient_id = ? AND read_at IS NULL AND visible_at <= ?
+  `).get(userId, now).n;
+}
+
+export function heldCount(db, userId, now = nowIso()) {
+  return db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE recipient_id = ? AND visible_at > ?')
+    .get(userId, now).n;
 }
 
 export const toNotification = (r) => ({
   id: r.id,
   type: r.type,
   body: r.body,
+  subject: r.subject,
   actorId: r.actor_id,
+  actorIds: r.actor_ids ? JSON.parse(r.actor_ids) : [r.actor_id],
+  activityCount: r.activity_count,
   eventId: r.event_id,
   read: r.read_at !== null,
   readAt: r.read_at,
   createdAt: r.created_at,
+  updatedAt: r.updated_at,
+  time: r.visible_at, // when it (last) arrived in the inbox
 });

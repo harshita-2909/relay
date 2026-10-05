@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { createApp } from '../src/app.js';
-import { openDb } from '../src/db/db.js';
+import { clock, openDb } from '../src/db/db.js';
 
 export const ASHA = { id: 'asha', name: 'Asha' };
 export const RAHUL = { id: 'rahul', name: 'Rahul' };
@@ -31,3 +31,17 @@ export const postEvent = (actor, { text = 'Hello world', mentions } = {}) => ({
 });
 
 export const followEvent = (actor, followee) => ({ type: 'user.followed', actor, data: { followee } });
+
+export const person = (name) => ({ id: name.toLowerCase(), name });
+
+export const unfollowEvent = (actor, followee) => ({ type: 'user.unfollowed', actor, data: { followee } });
+
+/** Take control of Relay's clock for one test. */
+export function fakeClock(t, start = '2026-10-05T10:00:00.000Z') {
+  let now = new Date(start);
+  t.mock.method(clock, 'now', () => new Date(now));
+  return {
+    advance(minutes) { now = new Date(now.getTime() + minutes * 60_000); },
+    get iso() { return now.toISOString(); },
+  };
+}
