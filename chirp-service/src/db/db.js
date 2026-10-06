@@ -17,3 +17,4 @@ export function openDb(path, { seedData = true } = {}) {
 }
 
 export const nowIso = () => new Date().toISOString();
+

@@ -54,7 +54,7 @@ export function chirpRouter(db, relay) {
       })),
     });
   });
-
+  
   router.get('/posts', (_req, res) => {
     const posts = db.prepare('SELECT * FROM posts ORDER BY created_at DESC, id DESC LIMIT 100').all();
     const comments = db.prepare('SELECT * FROM comments ORDER BY id').all();
